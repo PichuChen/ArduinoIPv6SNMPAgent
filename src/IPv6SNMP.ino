@@ -1,11 +1,19 @@
+/*
+Copyright 2014 Pichu Chen
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
 #include "ipv6snmpd.h"
-//#include "enc28j60.h"
-// IPv6WebServer
-//
-// 2010, 2012 by Guenther Hoelzl
-//
-// The program implements a simple IPv6 http-server
-// outputs the current values of the analog input pins
 //
 // Note: Works on an Arduino Uno with an ATMega328 and 
 // an ENC28J60 Ethershield
