@@ -36,6 +36,8 @@ IPv6Snmpd ipv6ES = IPv6Snmpd();
 #define RELAY_PIN 3
 #define LINE_BUF_SIZE 90
 
+
+
 const unsigned char sysNameOID[] =  "\x2b\x06\x01\x02\x01\x01\x05\x00"; // 1.3.5.1.2.1.1.5.0 
 const unsigned char TIH_Expr_Arduino_Pin3_OID[] = "\x2b\x06\x01\x04\x01\x82\xd7\x22\x11\x01\x03"; // 1.3.6.1.4.1.43938.17.1.3
 
@@ -47,22 +49,15 @@ char sysName[32] = "PikaPika";
 boolean inState[4];
 void setup() {
   Serial.begin(9600);
-  Serial.println(sizeofOIDTable[1]);
-  mySerial.begin(9600);
-  
   // init network-device
   ipv6ES.initENC28J60(mMAC);
-//  ipv6ES.initTCPIP(mMAC, NULL);  
   ipv6ES.initTCPIP(mMAC, snmpd);  
-//  ipv6ES.initTCPIP(mMAC, httpServer);  
-//ipv6ES.initTCPIP(mMAC,  processIncomingDataa);
   // add "Link Local Unicast" Address
   // for testing under Linux: ping6 -I eth0 fe80::1234
   ipv6ES.addAddress(0xfe80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x1234);
   // add "Global Unicast Address"
   // for testing under Linux: ping6 2a00:eb0:100:15::1234
   ipv6ES.addAddress(0x2001, 0x288, 0x8001, 0xd600, 0x00, 0x00, 0x00, 0x1234);
- // ipv6ES.addAddress(0x2a00, 0xeb0, 0x100, 0x15, 0x00, 0x00, 0x00, 0x1234); 
   // telnet listen
   ipv6ES.udpBind(161);    
   pinMode(3, OUTPUT);  
@@ -82,14 +77,6 @@ struct Ber_t{
 };
 
 void snmpd(){
-/*
-   Serial.println("Oops!!"); 
-   Serial.println(uip_flags);
-   Serial.println(ntohs(uip_udp_conn->lport));
-   Serial.println(ntohs(uip_udp_conn->rport));
-   Serial.println(ntohs(uip_conn->lport));
-   Serial.println(ntohs(uip_conn->rport));
-  */ 
    
    arduino_debug_address( &(UIP_IP_BUF->srcipaddr));
    arduino_debug_address( &(UIP_IP_BUF->destipaddr));
@@ -109,18 +96,7 @@ void snmpd(){
    Ber_t* endPtr;
    
    
-   /*
-   http://www.vijaymukhi.com/vmis/bersnmp.htm
-Context-specific types within an SNMP Message	Identifier in hex
-GetRequest-PDU	A0
-GetNextRequestPUD	A1
-GetResponse-PDU (Response-PDU in SNMPv 2)	A2
-SetRequest-PDU	A3
-Trap-PDU (obsolete in SNMPv 2)	A4
-GetBulkRequest-PDU (added in SNMPv 2)	A5
-InformRequest-PDU (added in SNMPv 2)	A6
-SNMPv2-Trap-PDU (added in SNMPv 2)	A7
-   */
+   //   http://www.vijaymukhi.com/vmis/bersnmp.htm
    enum PDUs{get_request=0xa0,get_next_request=0xa1,get_response=0xa2,set_request=0xa3, get_bulk_requeset = 0xa5, inform_request = 0xa6, snmpv2_trap = 0xa7};
    enum ASN_1_TYPE{ASN_1_INTEGER = 0x02, ASN_1_STRING = 0x04, ASN_1_SEQUENCE = 0x30};
    int communityNameLength;
@@ -132,16 +108,16 @@ SNMPv2-Trap-PDU (added in SNMPv 2)	A7
      endPtr = (Ber_t*)(&ptr->next + ptr->length) ;
      ptr =  (Ber_t*)(&ptr->next);
    }else{
-     Serial.println("WTF?") ;
+     return ; //Drop
    }
    
    // Fetch Version Begin
    if(ptr->type != ASN_1_INTEGER){ //INTEGER
-     Serial.println("WTF?") ;
+     return ; // Drop
    }
-   Serial.println(ptr->length,DEC);
    if(ptr->length != 1){
      Serial.println("Version Length Error");  
+     return ; //Drop
    }
    // Assume == 2 , 2c
    ptr =  (Ber_t*)(&ptr->next + ptr->length);
@@ -149,14 +125,12 @@ SNMPv2-Trap-PDU (added in SNMPv 2)	A7
    
    // Fetch Community Name Begin
    if(ptr->type != ASN_1_STRING){ //STRING
-     Serial.println("WTF?") ;
+     return ; // Drop
    }
    Serial.println(ptr->length,DEC);
    if((communityNameLength = ptr->length) >= 32){
      Serial.println("community Name too Long");  
    }
-   Serial.print("CNL:");
-   Serial.println(communityNameLength);
    char communityName[32];
    memcpy(communityName,&ptr->next,ptr->length);
    communityName[ptr->length] = '\0';
