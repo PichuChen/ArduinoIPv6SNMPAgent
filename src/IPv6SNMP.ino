@@ -184,19 +184,6 @@ void snmpd(){
    if(ptr->type != 0x06){ // OBJECT
      return ;//Drop
    }
-   unsigned long tmp = 0;
-   for(int i=0;i<ptr->length; ++i){
-     unsigned char * objChr = (unsigned char*)(&ptr->next) + i;
-     if(!(*objChr & 0x80)){
-       tmp |= *objChr; 
-       Serial.print(".");
-       Serial.print(tmp,DEC);
-       tmp = 0;
-     }else{
-       tmp |= 0x7f & *objChr;
-       tmp <<= 7;
-     }
-   }
    int Stat;
    
    const unsigned char ** ptrOID;
@@ -237,10 +224,6 @@ void snmpd(){
      int oldOIDLength = ptr->length;
      ptr->length = sizeofOIDTable[ptrOID - snmpWalkTable];
      memcpy(&ptr->next,*ptrOID,ptr->length);
-     Serial.print("oldLength : ");
-     Serial.print(oldOIDLength);
-     Serial.print("newLength : ");
-     Serial.println(ptr->length);
    uip_slen += ptr->length - oldOIDLength;
    startPtr[1] += ptr->length - oldOIDLength; // Set Sequence
    startPtr[8 + communityNameLength] += ptr->length - oldOIDLength; // Add RESPONSE LENGTH
@@ -249,8 +232,6 @@ void snmpd(){
      
    }
    
-     Serial.print("slen : ");
-     Serial.println(uip_slen);
    ptr =  (Ber_t*)(&ptr->next + ptr->length); // NEXT
    // Fetch Object-id End
    
@@ -280,25 +261,13 @@ void snmpd(){
    uip_process(UIP_UDP_SEND_CONN);
    tcpip_ipv6_output();
    uip_slen = 0;
-   
-//Clear IP,Port
+   //Clear IP,Port
    uip_udp_conn->rport = 0;
    memset(&uip_udp_conn->ripaddr, 0, sizeof(uip_udp_conn->ripaddr));
-   
 }
-
-int availableMemory() {
-  uint8_t * heapptr, * stackptr;
-  stackptr = (uint8_t *)malloc(4);  
-  heapptr = stackptr;
-  free(stackptr);               
-  stackptr = (uint8_t *)(SP);
-  return stackptr - heapptr;
-}  
 
 void loop() {
  // delay(10);
- 
  digitalWrite(RELAY_PIN,(inState[0]?HIGH:LOW));
  ipv6ES.receivePacket();
   if (ipv6ES.newDataLength() != 0) { 
