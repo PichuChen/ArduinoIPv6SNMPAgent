@@ -98,7 +98,7 @@ void snmpd(){
    
    //   http://www.vijaymukhi.com/vmis/bersnmp.htm
    enum PDUs{get_request=0xa0,get_next_request=0xa1,get_response=0xa2,set_request=0xa3, get_bulk_requeset = 0xa5, inform_request = 0xa6, snmpv2_trap = 0xa7};
-   enum ASN_1_TYPE{ASN_1_INTEGER = 0x02, ASN_1_STRING = 0x04, ASN_1_SEQUENCE = 0x30};
+   enum ASN_1_TYPE{ASN_1_INTEGER = 0x02, ASN_1_STRING = 0x04, ASN_1_OBJECT = 0x06, ASN_1_SEQUENCE = 0x30};
    int communityNameLength;
    unsigned int requestIdLength; 
    PDUs receivePDU;
@@ -140,9 +140,6 @@ void snmpd(){
    
    //Fetch Request Type Begin
    receivePDU = (PDUs)ptr->type;
-   if(ptr->type != get_request){// GET-REQUEST
-     Serial.println("WTF? G-R") ;
-   }
    ptr =  (Ber_t*)(&ptr->next);// IN
    //Fetch Request Type End
    
@@ -167,28 +164,28 @@ void snmpd(){
    //Fetch Error-Index End
    
    // Fetch Variable-bindings List Begin
-   if(ptr->type != 0x30){ // SEQUENCE	
+   if(ptr->type != ASN_1_SEQUENCE){ // SEQUENCE	
      return ; //Drop
    }
    ptr =  (Ber_t*)(&ptr->next); // IN
    // Fetch Variable-Blindings List End
    
    // Fetch Variable-binding Begin
-   if(ptr->type != 0x30){ // SEQUENCE	
+   if(ptr->type != ASN_1_SEQUENCE){ // SEQUENCE	
      return ; //Drop
    }
    ptr =  (Ber_t*)(&ptr->next); // IN
    // Fetch Variable-Blinding End
    
    // Fetch Object-id Begin
-   if(ptr->type != 0x06){ // OBJECT
+   if(ptr->type != ASN_1_OBJECT){ // OBJECT
      return ;//Drop
    }
    int Stat;
    
    const unsigned char ** ptrOID;
    
-   if(receivePDU == get_request){
+   if(receivePDU == get_request || receivePDU == set_request){
      for(ptrOID = snmpWalkTable;*ptrOID;++ptrOID){
       if(ptr->length != sizeofOIDTable[ptrOID - snmpWalkTable]){
         continue;
@@ -206,6 +203,8 @@ void snmpd(){
         break;
       }
      }
+     Serial.print("snmpwalk : ");
+     Serial.println(ptrOID - snmpWalkTable);
      if(*ptrOID == NULL){
        ptrOID =  snmpWalkTable;
      }
@@ -215,16 +214,26 @@ void snmpd(){
      Stat = 0; 
    }else{
      Serial.println("FOUND");
+     Serial.print("Stat : ");
      Stat =  ptrOID - snmpWalkTable + 1;
+     
+     Serial.println(Stat);
    }
-   
+   int oldOIDLength;
    char * startPtr = (char*)UIP_UDP_BUF + sizeof(uip_udp_hdr);
    if(receivePDU == get_next_request || receivePDU == get_bulk_requeset ){
      //Adjust OID
-     int oldOIDLength = ptr->length;
+     oldOIDLength = ptr->length;
      ptr->length = sizeofOIDTable[ptrOID - snmpWalkTable];
      memcpy(&ptr->next,*ptrOID,ptr->length);
    uip_slen += ptr->length - oldOIDLength;
+   Serial.print("Old OID Length = ");
+   Serial.print(oldOIDLength);
+   Serial.print("New Length = ");
+   Serial.print( ptr->length);
+   Serial.print("uip_slen : ");
+   Serial.println(uip_slen);
+   
    startPtr[1] += ptr->length - oldOIDLength; // Set Sequence
    startPtr[8 + communityNameLength] += ptr->length - oldOIDLength; // Add RESPONSE LENGTH
    startPtr[18 + communityNameLength + requestIdLength] +=ptr->length - oldOIDLength; //VarBind List LENGTH
@@ -234,15 +243,43 @@ void snmpd(){
    
    ptr =  (Ber_t*)(&ptr->next + ptr->length); // NEXT
    // Fetch Object-id End
-   
+   switch(receivePDU){
+   case set_request:
+   case get_request:
+     oldOIDLength = ptr->length ;
+     break;
+   case get_next_request:
+   case get_bulk_requeset:
+     oldOIDLength = 0;
+     break;
+   default:
+     Serial.print("PDU ERR");
+     return; //Drop
+   }
    if(Stat == 1){ // Found SysName
      //Receive End, Resopnse..
      // Set String Begin
+     if(receivePDU == set_request){
+       if(ptr->length >= 31){
+         Serial.println(" Too Long!!" );
+          
+       }else{
+         memcpy(sysName,&ptr->next,ptr->length);
+         sysName[ptr->length] = '\0'; 
+       }
+     }
      ptr->type = 0x04; // Set String
      ptr->length = strlen(sysName);  
      memcpy((char*)&ptr->next,sysName,ptr->length);
      // Set String End
    }else if(Stat == 2 ){ // Found Arudino Pin 3
+     if(receivePDU == set_request){
+       if(ptr->next != 0 && ptr->next != 1){
+         Serial.println(" Value Error" );
+       }else{
+         inState[0] = ptr->next;
+       }
+     }
      ptr->type = 0x02; // Set Int  
      ptr->length = 1;
      ptr->next = inState[0];
@@ -250,12 +287,12 @@ void snmpd(){
      ptr->type = 0x81; // Set No SuchInstance
    }
    
-   uip_slen = uip_slen + ptr->length;
-   startPtr[1] += ptr->length; // Set Sequence
+   uip_slen = uip_slen + ptr->length - oldOIDLength;
+   startPtr[1] += ptr->length - oldOIDLength; // Set Sequence
    startPtr[7 + communityNameLength] = 0xa2; // Set RESPONSE
-   startPtr[8 + communityNameLength] += ptr->length; // Add RESPONSE LENGTH
-   startPtr[18 + communityNameLength + requestIdLength] +=ptr->length; //VarBind List LENGTH
-   startPtr[20 + communityNameLength + requestIdLength] +=ptr->length; //VarBind LENGTH
+   startPtr[8 + communityNameLength] += ptr->length - oldOIDLength; // Add RESPONSE LENGTH
+   startPtr[18 + communityNameLength + requestIdLength] +=ptr->length - oldOIDLength; //VarBind List LENGTH
+   startPtr[20 + communityNameLength + requestIdLength] +=ptr->length - oldOIDLength; //VarBind LENGTH
    
    //Lanuch XD
    uip_process(UIP_UDP_SEND_CONN);
