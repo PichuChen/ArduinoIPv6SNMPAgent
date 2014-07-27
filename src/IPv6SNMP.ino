@@ -34,6 +34,7 @@ IPv6Snmpd ipv6ES = IPv6Snmpd();
 
 
 #define RELAY_PIN 3
+#define BUTTON_PIN 4
 #define LINE_BUF_SIZE 90
 
 
@@ -44,7 +45,11 @@ const unsigned char TIH_Expr_Arduino_Pin3_OID[] = "\x2b\x06\x01\x04\x01\x82\xd7\
 const unsigned char * snmpWalkTable[] = {sysNameOID,TIH_Expr_Arduino_Pin3_OID,NULL}; 
 int sizeofOIDTable[] = {sizeof(sysNameOID) -1, sizeof(TIH_Expr_Arduino_Pin3_OID) -1};
 
+
 char sysName[32] = "PikaPika";
+
+unsigned long heartBeatInterval = 1 * 1000; // ms
+
 
 boolean inState[4];
 void setup() {
@@ -64,6 +69,7 @@ void setup() {
   // telnet listen
   ipv6ES.udpBind(161);    
   pinMode(3, OUTPUT);  
+  pinMode(BUTTON_PIN, INPUT);  
 }
 extern int uip_slen;
 #include "arduino-debug.h"
@@ -304,13 +310,12 @@ void snmpd(){
    //Clear IP,Port
    uip_udp_conn->rport = 0;
    memset(&uip_udp_conn->ripaddr, 0, sizeof(uip_udp_conn->ripaddr));
+   heartBeatInterval = 60 * 1000;
 }
 
 void heartBeat(){
-  
   unsigned long currentMillis = millis();
   static unsigned long previousMillis = 0;
-  const unsigned long heartBeatInterval = 2000; // ms
   if(currentMillis - previousMillis < heartBeatInterval) {
     return; 
   }
@@ -352,13 +357,66 @@ void heartBeat(){
    tcpip_ipv6_output();
    uip_slen = 0; 
    uip_udp_remove(conn);
-   
 }
 
+
+void sendMsg(){
+  
+  Serial.println("sendMsg");
+   uip_ipaddr_t LpjServer;
+//   uip_ip6addr(&LpjServer,0x2001,0x288,0x8001,0xd600,0x0000,0x0000,0x0000,0x115);
+//   uip_ip6addr(&LpjServer,0x2a00, 0xeb0, 0x0100, 0x15, 0x00, 0x00, 0x00, 0x1);
+   uip_ip6addr(&LpjServer,0x2001,0x288,0x8001,0xd600,0x226,0x18ff,0xfea7,0x13e7);
+//   2a00:eb0:100:15::1
+   
+   arduino_debug_address( &(UIP_IP_BUF->srcipaddr));
+   arduino_debug_address( &(UIP_IP_BUF->destipaddr));
+   struct uip_udp_conn *conn = uip_udp_new(&LpjServer,htons(162));
+   if(conn == NULL){
+     Serial.println("!!"); 
+   }else{
+     uip_udp_bind(conn,htons(161)); 
+   }
+   char  pdu[]= "\x30\x33" // SEQUENCE
+                "\x02\x01\x01" // Version 2c
+                "\x04\x06""public"// Community Name 
+                "\xa7\x26"// SNMP TRAPv2
+                "\x02\x02\x6b\x9e" // requeit-id
+                "\x02\x01\x00\x02\x01\x00" // Error status and index
+                "\x30\x1a" // Var Bind List
+                "\x30\x18" // Var Bind
+                "\x06\x0a\x2b\x06\x01\x06\x03\x01\x01\x04\x01\x00"  // 1.3.6.1.6.3.1.1.4.1.0 SNMPv2-MIB::snmpTrapOID.0
+                "\x06\x0a\x2b\x06\x01\x06\x03\x01\x01\x05\x02\x00"; // 1.3.6.1.6.3.1.1.5.1.0 SNMPv2-MIB::coldStart.0
+   Ber_t* ptr = (Ber_t*)((unsigned char*)UIP_UDP_BUF + sizeof(uip_udp_hdr));
+   memcpy((char*)ptr,pdu,sizeof(pdu));     
+   uip_udp_conn = conn;
+   uip_slen = sizeof(pdu);
+   
+   uip_process(UIP_UDP_SEND_CONN);
+   tcpip_ipv6_output();
+   uip_slen = 0; 
+   uip_udp_remove(conn);
+}
+
+int keyDown = 0;
 
 void loop() {
   heartBeat();
   digitalWrite(RELAY_PIN,(inState[0]?HIGH:LOW));
+  inState[1] = digitalRead(BUTTON_PIN);
+  if(keyDown == 1){
+    if(inState[1] == 0){
+      keyDown = 0;
+      Serial.println(">///<");
+      sendMsg();
+    } 
+  }else{
+    if(inState[1] == 1){
+      keyDown = 1;
+    } 
+  }
+  
+  
  ipv6ES.receivePacket();
   if (ipv6ES.newDataLength() != 0) { 
     if (ipv6ES.isIPv6Packet()) {
